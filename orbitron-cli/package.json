@@ -1,0 +1,33 @@
+{
+  "name": "orbitron-cli",
+  "version": "1.0.1",
+  "description": "A Node.js TUI package inspired by codebuff.com's CLI",
+  "main": "bin/orbitron",
+  "bin": {
+    "orbitron": "bin/orbitron",
+    "ob": "bin/orbitron"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "bun run bin/orbitron"
+  },
+  "keywords": [
+    "tui",
+    "cli",
+    "interactive"
+  ],
+  "author": "johndih",
+  "license": "MIT",
+  "dependencies": {
+    "@opentui/core": "^0.2.1",
+    "@opentui/react": "^0.2.1",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "package.json"
+  ],
+  "type": "module"
+}
