@@ -9,6 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.world.World;
 
 public class ChatListener {
     private static final String TRIGGER_PREFIX = "@orbitron";
@@ -46,34 +47,56 @@ public class ChatListener {
 
             OrbitronCompanionMod.LOGGER.info("Sending chat to backend: {}", payload);
 
-            new Thread(() -> {
-                String response = chatHandler.handleMessage(payload);
-                OrbitronCompanionMod.LOGGER.info("Backend response: {}", response);
+            server.execute(() -> {
+                final CompanionEntity finalCompanion = companion;
+                final String finalPlayerName = playerName;
 
-                String displayText = response;
-                boolean executedTools = false;
+                new Thread(() -> {
+                    try {
+                        String response = chatHandler.handleMessage(payload);
+                        OrbitronCompanionMod.LOGGER.info("Backend response: {}", response);
 
-                if (companion != null) {
-                    ToolExecutor.ToolResult result = ToolExecutor.parseAndExecute(companion, response);
-                    displayText = result.responseText;
-                    executedTools = result.executedAnyTool;
-                }
+                        String displayText = response;
+                        boolean executedTools = false;
 
-                final String finalText = displayText;
-                final boolean finalExecuted = executedTools;
+                        if (finalCompanion != null) {
+                            server.execute(() -> {
+                                ToolExecutor.ToolResult result = ToolExecutor.parseAndExecute(finalCompanion, response);
+                                final String toolDisplayText = result.responseText;
+                                final boolean toolExecuted = result.executedAnyTool;
 
-                server.execute(() -> {
-                    Text formattedResponse = Text.literal(AI_PREFIX)
-                        .formatted(Formatting.GOLD)
-                        .append(Text.literal(finalText).formatted(Formatting.WHITE));
+                                server.execute(() -> {
+                                    Text formattedResponse = Text.literal(AI_PREFIX)
+                                        .formatted(Formatting.GOLD)
+                                        .append(Text.literal(toolDisplayText).formatted(Formatting.WHITE));
 
-                    server.getPlayerManager().broadcast(formattedResponse, false);
+                                    server.getPlayerManager().broadcast(formattedResponse, false);
 
-                    if (finalExecuted) {
-                        OrbitronCompanionMod.LOGGER.info("Tools executed for companion of player: {}", playerName);
+                                    if (toolExecuted) {
+                                        OrbitronCompanionMod.LOGGER.info("Tools executed for companion of player: {}", finalPlayerName);
+                                    }
+                                });
+                            });
+                        } else {
+                            server.execute(() -> {
+                                Text formattedResponse = Text.literal(AI_PREFIX)
+                                    .formatted(Formatting.GOLD)
+                                    .append(Text.literal(displayText).formatted(Formatting.WHITE));
+
+                                server.getPlayerManager().broadcast(formattedResponse, false);
+                            });
+                        }
+                    } catch (Exception e) {
+                        OrbitronCompanionMod.LOGGER.error("Failed to process chat message", e);
+                        server.execute(() -> {
+                            Text errorText = Text.literal(AI_PREFIX)
+                                .formatted(Formatting.GOLD)
+                                .append(Text.literal("Error processing request").formatted(Formatting.RED));
+                            server.getPlayerManager().broadcast(errorText, false);
+                        });
                     }
-                });
-            }).start();
+                }).start();
+            });
         });
 
         OrbitronCompanionMod.LOGGER.info("ChatListener registered");
@@ -88,9 +111,15 @@ public class ChatListener {
     }
 
     private boolean hasCompanionNearby(ServerPlayerEntity player) {
-        for (Entity entity : player.getWorld().getEntitiesByClass(CompanionEntity.class, player.getBoundingBox().expand(COMPANION_NEARBY_RADIUS), e -> true)) {
+        World world = player.getWorld();
+        if (world == null) {
+            OrbitronCompanionMod.LOGGER.warn("Player world is null for: {}", player.getName().getString());
+            return false;
+        }
+
+        for (Entity entity : world.getEntitiesByClass(CompanionEntity.class, player.getBoundingBox().expand(COMPANION_NEARBY_RADIUS), e -> true)) {
             if (entity instanceof CompanionEntity companion) {
-                if (companion.getOwner() == player) {
+                if (companion.getOwner() != null && companion.getOwner() == player) {
                     return true;
                 }
             }
@@ -99,12 +128,18 @@ public class ChatListener {
     }
 
     private CompanionEntity findNearestCompanion(ServerPlayerEntity player) {
+        World world = player.getWorld();
+        if (world == null) {
+            OrbitronCompanionMod.LOGGER.warn("Player world is null for: {}", player.getName().getString());
+            return null;
+        }
+
         CompanionEntity nearest = null;
         double nearestDist = Double.MAX_VALUE;
 
-        for (Entity entity : player.getWorld().getEntitiesByClass(CompanionEntity.class, player.getBoundingBox().expand(COMPANION_NEARBY_RADIUS), e -> true)) {
+        for (Entity entity : world.getEntitiesByClass(CompanionEntity.class, player.getBoundingBox().expand(COMPANION_NEARBY_RADIUS), e -> true)) {
             if (entity instanceof CompanionEntity companion) {
-                if (companion.getOwner() == player) {
+                if (companion.getOwner() != null && companion.getOwner() == player) {
                     double dist = player.squaredDistanceTo(companion);
                     if (dist < nearestDist) {
                         nearestDist = dist;
