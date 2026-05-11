@@ -1,8 +1,8 @@
 package com.orbitron.companion.chat;
 
 import com.orbitron.companion.OrbitronCompanionMod;
+import com.orbitron.companion.ai.ToolExecutor;
 import com.orbitron.companion.entity.CompanionEntity;
-import com.orbitron.companion.network.BackendClient;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.MinecraftServer;
@@ -39,18 +39,39 @@ public class ChatListener {
                 return;
             }
 
+            CompanionEntity companion = findNearestCompanion(sender);
+            if (companion == null) {
+                OrbitronCompanionMod.LOGGER.warn("No companion found for player: {}", playerName);
+            }
+
             OrbitronCompanionMod.LOGGER.info("Sending chat to backend: {}", payload);
 
             new Thread(() -> {
                 String response = chatHandler.handleMessage(payload);
                 OrbitronCompanionMod.LOGGER.info("Backend response: {}", response);
 
+                String displayText = response;
+                boolean executedTools = false;
+
+                if (companion != null) {
+                    ToolExecutor.ToolResult result = ToolExecutor.parseAndExecute(companion, response);
+                    displayText = result.responseText;
+                    executedTools = result.executedAnyTool;
+                }
+
+                final String finalText = displayText;
+                final boolean finalExecuted = executedTools;
+
                 server.execute(() -> {
                     Text formattedResponse = Text.literal(AI_PREFIX)
                         .formatted(Formatting.GOLD)
-                        .append(Text.literal(response).formatted(Formatting.WHITE));
+                        .append(Text.literal(finalText).formatted(Formatting.WHITE));
 
                     server.getPlayerManager().broadcast(formattedResponse, false);
+
+                    if (finalExecuted) {
+                        OrbitronCompanionMod.LOGGER.info("Tools executed for companion of player: {}", playerName);
+                    }
                 });
             }).start();
         });
@@ -75,5 +96,24 @@ public class ChatListener {
             }
         }
         return false;
+    }
+
+    private CompanionEntity findNearestCompanion(ServerPlayerEntity player) {
+        CompanionEntity nearest = null;
+        double nearestDist = Double.MAX_VALUE;
+
+        for (Entity entity : player.getWorld().getEntitiesByClass(CompanionEntity.class, player.getBoundingBox().expand(COMPANION_NEARBY_RADIUS), e -> true)) {
+            if (entity instanceof CompanionEntity companion) {
+                if (companion.getOwner() == player) {
+                    double dist = player.squaredDistanceTo(companion);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearest = companion;
+                    }
+                }
+            }
+        }
+
+        return nearest;
     }
 }
