@@ -17,5 +17,7 @@ public class OrbitronCompanionMod implements ModInitializer {
 
         ChatListener chatListener = new ChatListener();
         chatListener.register();
+
+        PlayerJoinHandler.register();
     }
 }
